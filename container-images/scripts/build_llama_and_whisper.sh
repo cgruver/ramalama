@@ -7,6 +7,8 @@ dnf_install() {
   local vulkan_rpms=("vulkan-headers" "vulkan-loader-devel" "vulkan-tools" \
                      "spirv-tools" "glslc" "glslang")
 
+  local intel_gpu_rpms=("g++" "cmake" "git" "libcurl-devel" "intel-oneapi-mkl-sycl-devel" "intel-oneapi-dnnl-devel" intel-oneapi-compiler-dpcpp-cpp intel-level-zero oneapi-level-zero oneapi-level-zero-devel intel-compute-runtime)
+
   # All the UBI-based ones
   if [ "$containerfile" = "ramalama" ] || [ "$containerfile" = "rocm" ] || \
     [ "$containerfile" = "vulkan" ]; then
