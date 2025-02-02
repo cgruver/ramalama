@@ -15,9 +15,9 @@ function cloneAndBuild() {
   cd ${work_dir}
   git submodule update --init --recursive
   git reset --hard ${git_sha}
-  cmake -B build ${cmake_flags[@]} 2>&1 | cmake_check_warnings
-  cmake --build build --config Release -j$(nproc) -v 2>&1 | cmake_check_warnings
-  cmake --install build --prefix ${install_prefix} 2>&1 | cmake_check_warnings
+  cmake -B build ${cmake_flags[@]} 2>&1 | cmakeCheckWarnings
+  cmake --build build --config Release -j$(nproc) -v 2>&1 | cmakeCheckWarnings
+  cmake --install build --prefix ${install_prefix} 2>&1 | cmakeCheckWarnings
   cd -
   rm -rf ${work_dir}
 }
@@ -39,30 +39,29 @@ function dnfInstallUbi() {
   dnf --enablerepo=ubi-9-appstream-rpms install -y mesa-vulkan-drivers ${packages[@]}
 }
 
-main() {
+function main() {
   set -ex
 
-  local containerfile=${1}
-  local install_prefix
+  local container_image=${1}
+  local install_prefix=/usr
   local package_list
   local whisper_cpp_sha=${WHISPER_CPP_SHA:-8a9ad7844d6e2a10cddf4b92de4089d7ac2b14a9}
   local llama_cpp_sha=${LLAMA_CPP_SHA:-aa6fb1321333fae8853d0cdc26bcb5d438e650a1}
   local common_rpms=("python3" "python3-pip" "python3-argcomplete" "python3-dnf-plugin-versionlock" "gcc-c++" "cmake" "vim" "procps-ng" "git" "dnf-plugins-core" "libcurl-devel")
   local vulkan_rpms=("vulkan-headers" "vulkan-loader-devel" "vulkan-tools" "spirv-tools" "glslc" "glslang")
   local intel_rpms=("intel-oneapi-mkl-sycl-devel" "intel-oneapi-dnnl-devel" "intel-oneapi-compiler-dpcpp-cpp" "intel-level-zero" "oneapi-level-zero" "oneapi-level-zero-devel" "intel-compute-runtime")
+  local ubi_packages+=(${common_rpms[@]} ${vulkan_rpms[@]})
   local cmake_flags=("-DGGML_CCACHE=OFF" "-DGGML_NATIVE=OFF" "-DBUILD_SHARED_LIBS=NO")
 
-  case ${containerfile} in
+  case ${container_image} in
     ramalama)
-      dnfInstallUbi (${common_rpms[@]} ${vulkan_rpms[@]})
+      dnfInstallUbi ${ubi_packages}
       cmake_flags+=("-DGGML_KOMPUTE=ON" "-DKOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK=ON")
-      install_prefix=/usr
     ;;
     rocm)
-      dnfInstallUbi (${common_rpms[@]} ${vulkan_rpms[@]})
+      dnfInstallUbi ${ubi_packages}
       dnf install -y rocm-dev hipblas-devel rocblas-devel
       cmake_flags+=("-DGGML_HIP=ON" "-DAMDGPU_TARGETS=${AMDGPU_TARGETS:-gfx1010,gfx1030,gfx1032,gfx1100,gfx1101,gfx1102}")
-      install_prefix=/usr
     ;;
     cuda)
       dnf install -y "${common_rpms[@]}" gcc-toolset-12
@@ -71,21 +70,20 @@ main() {
       install_prefix=/llama-cpp
     ;;
     vulkan)
-      dnfInstallUbi (${common_rpms[@]} ${vulkan_rpms[@]})
+      dnfInstallUbi ${ubi_packages}
       cmake_flags+=("-DGGML_VULKAN=1")
-      install_prefix=/usr
     ;;
     asahi)
       dnf copr enable -y @asahi/fedora-remix-branding
       dnf install -y asahi-repos
       dnf install -y mesa-vulkan-drivers "${vulkan_rpms[@]}" "${common_rpms[@]}"
       cmake_flags+=("-DGGML_VULKAN=1")
-      install_prefix=/usr
     ;;
     intel-gpu)
       dnf install -y ${common_rpms[@]} ${intel_rpms[@]}
       cmake_flags+=("-DGGML_SYCL=ON" "-DCMAKE_C_COMPILER=icx" "-DCMAKE_CXX_COMPILER=icpx")
       install_prefix=/llama-cpp
+      source /opt/intel/oneapi/setvars.sh
     ;;
   esac
 
