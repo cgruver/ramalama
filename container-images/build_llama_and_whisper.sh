@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Bash does not easily pass arrays as a single arg to a function.  So, make this a global var in the script.
+CMAKE_FLAGS=""
+
 function cmakeCheckWarnings() {
   awk -v rc=0 '/CMake Warning:/ { rc=1 } 1; END {exit rc}'
 }
@@ -7,15 +10,16 @@ function cmakeCheckWarnings() {
 function cloneAndBuild() {
   local git_repo=${1}
   local git_sha=${2}
-  local cmake_flags=${3}
-  local install_prefix=${4}
+  local install_prefix=${3}
   local work_dir=$(mktemp -d)
 
   git clone ${git_repo} ${work_dir}
   cd ${work_dir}
   git submodule update --init --recursive
   git reset --hard ${git_sha}
-  cmake -B build ${cmake_flags[@]} 2>&1 | cmakeCheckWarnings
+  echo "-------------CMAKE FLAGS---------------------"
+  echo "${CMAKE_FLAGS[@]}"
+  cmake -B build ${CMAKE_FLAGS[@]} 2>&1 | cmakeCheckWarnings
   cmake --build build --config Release -j$(nproc) -v 2>&1 | cmakeCheckWarnings
   cmake --install build --prefix ${install_prefix} 2>&1 | cmakeCheckWarnings
   cd -
@@ -48,47 +52,48 @@ function main() {
   local common_rpms=("python3" "python3-pip" "python3-argcomplete" "python3-dnf-plugin-versionlock" "gcc-c++" "cmake" "vim" "procps-ng" "git" "dnf-plugins-core" "libcurl-devel")
   local vulkan_rpms=("vulkan-headers" "vulkan-loader-devel" "vulkan-tools" "spirv-tools" "glslc" "glslang")
   local intel_rpms=("intel-oneapi-mkl-sycl-devel" "intel-oneapi-dnnl-devel" "intel-oneapi-compiler-dpcpp-cpp" "intel-level-zero" "oneapi-level-zero" "oneapi-level-zero-devel" "intel-compute-runtime")
-  local cmake_flags=("-DGGML_CCACHE=OFF" "-DGGML_NATIVE=OFF" "-DBUILD_SHARED_LIBS=NO")
+
+  CMAKE_FLAGS=("-DGGML_CCACHE=OFF" "-DGGML_NATIVE=OFF" "-DBUILD_SHARED_LIBS=NO")
 
   case ${container_image} in
     ramalama)
       dnfPrepUbi
       dnf --enablerepo=ubi-9-appstream-rpms install -y mesa-vulkan-drivers "${common_rpms[@]}" "${vulkan_rpms[@]}"
-      cmake_flags+=("-DGGML_KOMPUTE=ON" "-DKOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK=ON")
+      CMAKE_FLAGS+=("-DGGML_KOMPUTE=ON" "-DKOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK=ON")
     ;;
     rocm)
       dnfPrepUbi
       dnf --enablerepo=ubi-9-appstream-rpms install -y "${common_rpms[@]}" "${vulkan_rpms[@]}" rocm-dev hipblas-devel rocblas-devel
-      cmake_flags+=("-DGGML_HIP=ON" "-DAMDGPU_TARGETS=${AMDGPU_TARGETS:-gfx1010,gfx1030,gfx1032,gfx1100,gfx1101,gfx1102}")
+      CMAKE_FLAGS+=("-DGGML_HIP=ON" "-DAMDGPU_TARGETS=${AMDGPU_TARGETS:-gfx1010,gfx1030,gfx1032,gfx1100,gfx1101,gfx1102}")
     ;;
     cuda)
       dnf install -y "${common_rpms[@]}" gcc-toolset-12
       . /opt/rh/gcc-toolset-12/enable
-      cmake_flags+=("-DGGML_CUDA=ON" "-DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined")
+      CMAKE_FLAGS+=("-DGGML_CUDA=ON" "-DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined")
       install_prefix=/llama-cpp
     ;;
     vulkan)
       dnfPrepUbi
       dnf --enablerepo=ubi-9-appstream-rpms install -y mesa-vulkan-drivers "${common_rpms[@]}" "${vulkan_rpms[@]}"
-      cmake_flags+=("-DGGML_VULKAN=1")
+      CMAKE_FLAGS+=("-DGGML_VULKAN=1")
     ;;
     asahi)
       dnf copr enable -y @asahi/fedora-remix-branding
       dnf install -y asahi-repos
       dnf install -y mesa-vulkan-drivers "${vulkan_rpms[@]}" "${common_rpms[@]}"
-      cmake_flags+=("-DGGML_VULKAN=1")
+      CMAKE_FLAGS+=("-DGGML_VULKAN=1")
     ;;
     intel-gpu)
       dnf install -y ${common_rpms[@]} ${intel_rpms[@]}
-      cmake_flags+=("-DGGML_SYCL=ON" "-DCMAKE_C_COMPILER=icx" "-DCMAKE_CXX_COMPILER=icpx")
+      CMAKE_FLAGS+=("-DGGML_SYCL=ON" "-DCMAKE_C_COMPILER=icx" "-DCMAKE_CXX_COMPILER=icpx")
       install_prefix=/llama-cpp
       source /opt/intel/oneapi/setvars.sh
     ;;
   esac
 
-  cloneAndBuild https://github.com/ggerganov/whisper.cpp ${whisper_cpp_sha} ${cmake_flags} ${install_prefix}
-  cmake_flags+=("-DLLAMA_CURL=ON")
-  cloneAndBuild https://github.com/ggerganov/llama.cpp ${llama_cpp_sha} ${cmake_flags} ${install_prefix}
+  cloneAndBuild https://github.com/ggerganov/whisper.cpp ${whisper_cpp_sha} ${install_prefix}
+  CMAKE_FLAGS+=("-DLLAMA_CURL=ON")
+  cloneAndBuild https://github.com/ggerganov/llama.cpp ${llama_cpp_sha} ${install_prefix}
   dnf -y clean all
   rm -rf /var/cache/*dnf* /opt/rocm-*/lib/*/library/*gfx9*
   ldconfig # needed for libraries
