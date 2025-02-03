@@ -22,9 +22,8 @@ function cloneAndBuild() {
   rm -rf ${work_dir}
 }
 
-function dnfInstallUbi() {
+function dnfPrepUbi() {
 
-  local packages=${1}
   local url="https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm"
   local uname_m=$(uname -m)
 
@@ -36,7 +35,6 @@ function dnfInstallUbi() {
   url="http://mirror.centos.org/centos/RPM-GPG-KEY-CentOS-Official"
   curl --retry 8 --retry-all-errors -o /etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-Official ${url}
   rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-Official
-  dnf --enablerepo=ubi-9-appstream-rpms install -y mesa-vulkan-drivers ${packages[@]}
 }
 
 function main() {
@@ -50,17 +48,17 @@ function main() {
   local common_rpms=("python3" "python3-pip" "python3-argcomplete" "python3-dnf-plugin-versionlock" "gcc-c++" "cmake" "vim" "procps-ng" "git" "dnf-plugins-core" "libcurl-devel")
   local vulkan_rpms=("vulkan-headers" "vulkan-loader-devel" "vulkan-tools" "spirv-tools" "glslc" "glslang")
   local intel_rpms=("intel-oneapi-mkl-sycl-devel" "intel-oneapi-dnnl-devel" "intel-oneapi-compiler-dpcpp-cpp" "intel-level-zero" "oneapi-level-zero" "oneapi-level-zero-devel" "intel-compute-runtime")
-  local ubi_packages+=(${common_rpms[@]} ${vulkan_rpms[@]})
   local cmake_flags=("-DGGML_CCACHE=OFF" "-DGGML_NATIVE=OFF" "-DBUILD_SHARED_LIBS=NO")
 
   case ${container_image} in
     ramalama)
-      dnfInstallUbi ${ubi_packages}
+      dnfPrepUbi
+      dnf --enablerepo=ubi-9-appstream-rpms install -y mesa-vulkan-drivers "${common_rpms[@]}" "${vulkan_rpms[@]}"
       cmake_flags+=("-DGGML_KOMPUTE=ON" "-DKOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK=ON")
     ;;
     rocm)
-      dnfInstallUbi ${ubi_packages}
-      dnf install -y rocm-dev hipblas-devel rocblas-devel
+      dnfPrepUbi
+      dnf --enablerepo=ubi-9-appstream-rpms install -y "${common_rpms[@]}" "${vulkan_rpms[@]}" rocm-dev hipblas-devel rocblas-devel
       cmake_flags+=("-DGGML_HIP=ON" "-DAMDGPU_TARGETS=${AMDGPU_TARGETS:-gfx1010,gfx1030,gfx1032,gfx1100,gfx1101,gfx1102}")
     ;;
     cuda)
@@ -70,7 +68,8 @@ function main() {
       install_prefix=/llama-cpp
     ;;
     vulkan)
-      dnfInstallUbi ${ubi_packages}
+      dnfPrepUbi
+      dnf --enablerepo=ubi-9-appstream-rpms install -y mesa-vulkan-drivers "${common_rpms[@]}" "${vulkan_rpms[@]}"
       cmake_flags+=("-DGGML_VULKAN=1")
     ;;
     asahi)
